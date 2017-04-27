@@ -92,7 +92,16 @@ org.eclipse.jetty.server.Server@88ca072 - STARTED
          +- file:/usr/lib/jvm/java-8-openjdk-amd64/jre/lib/ext/nashorn.jar
 2017-04-25T21:43:08 [main] INFO com.kesselring.apacheasyncclienttests.Main - startup done
 ```
-Now the jetty server is up and running
+Now the jetty server is up and running. slf4j logs the worker thread. We have
+main, which speaks for itself. qtp... are the jetty workers. Last but not least,
+we have the I/O Dispatcher of the Async HTTP Client. By default, one io worker per cpu core
+is created. I have 4 cpu cores, so 4 io dispatcher will be created.
+
+The async client is configured to allow a max of 8 requests to one route. We start 10 requests,
+so the last two will be run after the first 8.
+
+We "simulate" long running io with 10s sleeps. One sleep inside our jetty handler, one sleep in our request callback.
+This is the output of our setup:
 ```
 2017-04-25T21:43:08 [main] INFO com.kesselring.apacheasyncclienttests.Main - client started
 2017-04-25T21:43:08 [main] INFO com.kesselring.apacheasyncclienttests.Main - 10 requests triggered, now sleeping 1s
@@ -140,4 +149,57 @@ Now the jetty server is up and running
 2017-04-25T21:44:09 [main] INFO com.kesselring.apacheasyncclienttests.Main - everything should be done by now, shutting down
 Process finished with exit code 0
 ```
-TODO
+
+As you can see, you generally don't want to have long running callbacks, because request scheduling
+might be affected by blocking io dispatchers [see 3.2.1 here](https://hc.apache.org/httpcomponents-core-ga/tutorial/html/nio.html).
+
+If we run our code and uncomment the sleep in our callback, we will get what we expect:
+```
+2017-04-27T06:04:28 [main] INFO com.kesselring.apacheasyncclienttests.Main - startup done
+2017-04-27T06:04:29 [main] INFO com.kesselring.apacheasyncclienttests.Main - client started
+2017-04-27T06:04:29 [main] INFO com.kesselring.apacheasyncclienttests.Main - 10 requests triggered, now sleeping 1s
+2017-04-27T06:04:29 [qtp756252389-29] INFO com.kesselring.apacheasyncclienttests.Main$LocalServer - request: 5
+2017-04-27T06:04:29 [qtp756252389-13] INFO com.kesselring.apacheasyncclienttests.Main$LocalServer - request: 3
+2017-04-27T06:04:29 [qtp756252389-17] INFO com.kesselring.apacheasyncclienttests.Main$LocalServer - request: 4
+2017-04-27T06:04:29 [qtp756252389-27] INFO com.kesselring.apacheasyncclienttests.Main$LocalServer - request: 2
+2017-04-27T06:04:29 [qtp756252389-15] INFO com.kesselring.apacheasyncclienttests.Main$LocalServer - request: 1
+2017-04-27T06:04:29 [qtp756252389-31] INFO com.kesselring.apacheasyncclienttests.Main$LocalServer - request: 6
+2017-04-27T06:04:29 [qtp756252389-14] INFO com.kesselring.apacheasyncclienttests.Main$LocalServer - request: 7
+2017-04-27T06:04:29 [qtp756252389-28] INFO com.kesselring.apacheasyncclienttests.Main$LocalServer - request: 8
+2017-04-27T06:04:30 [main] INFO com.kesselring.apacheasyncclienttests.Main - sleep done, but requests still working (sleep 10000s inside jettys handler)
+2017-04-27T06:04:39 [qtp756252389-14] INFO com.kesselring.apacheasyncclienttests.Main$LocalServer - done: 7
+2017-04-27T06:04:39 [qtp756252389-13] INFO com.kesselring.apacheasyncclienttests.Main$LocalServer - done: 3
+2017-04-27T06:04:39 [qtp756252389-29] INFO com.kesselring.apacheasyncclienttests.Main$LocalServer - done: 5
+2017-04-27T06:04:39 [qtp756252389-27] INFO com.kesselring.apacheasyncclienttests.Main$LocalServer - done: 2
+2017-04-27T06:04:39 [qtp756252389-17] INFO com.kesselring.apacheasyncclienttests.Main$LocalServer - done: 4
+2017-04-27T06:04:39 [qtp756252389-31] INFO com.kesselring.apacheasyncclienttests.Main$LocalServer - done: 6
+2017-04-27T06:04:39 [qtp756252389-28] INFO com.kesselring.apacheasyncclienttests.Main$LocalServer - done: 8
+2017-04-27T06:04:39 [qtp756252389-15] INFO com.kesselring.apacheasyncclienttests.Main$LocalServer - done: 1
+2017-04-27T06:04:39 [I/O dispatcher 4] INFO Callback - callback pre io: ->HTTP/1.1 200 OK: 4 has been processed successfully
+2017-04-27T06:04:39 [I/O dispatcher 2] INFO Callback - callback pre io: ->HTTP/1.1 200 OK: 7 has been processed successfully
+2017-04-27T06:04:39 [I/O dispatcher 1] INFO Callback - callback pre io: ->HTTP/1.1 200 OK: 6 has been processed successfully
+2017-04-27T06:04:39 [I/O dispatcher 4] INFO Callback - callback after io: 4 has been processed successfully
+2017-04-27T06:04:39 [I/O dispatcher 2] INFO Callback - callback after io: 7 has been processed successfully
+2017-04-27T06:04:39 [I/O dispatcher 1] INFO Callback - callback after io: 6 has been processed successfully
+2017-04-27T06:04:39 [I/O dispatcher 3] INFO Callback - callback pre io: ->HTTP/1.1 200 OK: 3 has been processed successfully
+2017-04-27T06:04:39 [I/O dispatcher 3] INFO Callback - callback after io: 3 has been processed successfully
+2017-04-27T06:04:39 [I/O dispatcher 3] INFO Callback - callback pre io: ->HTTP/1.1 200 OK: 8 has been processed successfully
+2017-04-27T06:04:39 [I/O dispatcher 2] INFO Callback - callback pre io: ->HTTP/1.1 200 OK: 5 has been processed successfully
+2017-04-27T06:04:39 [I/O dispatcher 1] INFO Callback - callback pre io: ->HTTP/1.1 200 OK: 1 has been processed successfully
+2017-04-27T06:04:39 [I/O dispatcher 3] INFO Callback - callback after io: 8 has been processed successfully
+2017-04-27T06:04:39 [I/O dispatcher 2] INFO Callback - callback after io: 5 has been processed successfully
+2017-04-27T06:04:39 [I/O dispatcher 1] INFO Callback - callback after io: 1 has been processed successfully
+2017-04-27T06:04:39 [I/O dispatcher 4] INFO Callback - callback pre io: ->HTTP/1.1 200 OK: 2 has been processed successfully
+2017-04-27T06:04:39 [I/O dispatcher 4] INFO Callback - callback after io: 2 has been processed successfully
+2017-04-27T06:04:39 [qtp756252389-18] INFO com.kesselring.apacheasyncclienttests.Main$LocalServer - request: 9
+2017-04-27T06:04:39 [qtp756252389-16] INFO com.kesselring.apacheasyncclienttests.Main$LocalServer - request: 10
+2017-04-27T06:04:49 [qtp756252389-18] INFO com.kesselring.apacheasyncclienttests.Main$LocalServer - done: 9
+2017-04-27T06:04:49 [qtp756252389-16] INFO com.kesselring.apacheasyncclienttests.Main$LocalServer - done: 10
+2017-04-27T06:04:49 [I/O dispatcher 1] INFO Callback - callback pre io: ->HTTP/1.1 200 OK: 9 has been processed successfully
+2017-04-27T06:04:49 [I/O dispatcher 1] INFO Callback - callback after io: 9 has been processed successfully
+2017-04-27T06:04:49 [I/O dispatcher 4] INFO Callback - callback pre io: ->HTTP/1.1 200 OK: 10 has been processed successfully
+2017-04-27T06:04:49 [I/O dispatcher 4] INFO Callback - callback after io: 10 has been processed successfully
+2017-04-27T06:05:30 [main] INFO com.kesselring.apacheasyncclienttests.Main - everything should be done by now, shutting down
+
+```
+Now we have one request round of 8. After 10s, the remaining 2 will be requested. And after additional 10s, those 2 will be done aswell.
