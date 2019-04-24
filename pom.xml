@@ -8,7 +8,7 @@
     <artifactId>Apache-HttpAsyncClient-Examples</artifactId>
     <version>1.0-SNAPSHOT</version>
     <properties>
-        <jettyVersion>9.4.12.v20180830</jettyVersion>
+        <jettyVersion>9.4.17.v20190418</jettyVersion>
     </properties>
 
     <dependencies>
